@@ -1,0 +1,59 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body {
+  background-color: #0b0e11;
+  color: #e6e9ec;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+::selection {
+  background: #f0a340;
+  color: #0b0e11;
+}
+
+/* The beacon -- Watchtower's signature element. A pulsing dot
+   with a slow rotating sweep ring around it, meant to read as
+   "actively watching" rather than a generic status indicator.
+   Used on the landing hero and next to any active claim. */
+.beacon-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.beacon-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 9999px;
+  background: #f0a340;
+  box-shadow: 0 0 12px 2px rgba(240, 163, 64, 0.55);
+}
+
+.beacon-ring {
+  position: absolute;
+  inset: -10px;
+  border-radius: 9999px;
+  border: 1px solid rgba(240, 163, 64, 0.35);
+}
+
+/* Reduced motion: honor system preference, per quality floor */
+@media (prefers-reduced-motion: reduce) {
+  .animate-beaconPulse,
+  .animate-sweep {
+    animation: none !important;
+  }
+}
+
+/* Visible keyboard focus everywhere -- never remove outline
+   without replacing it. */
+:focus-visible {
+  outline: 2px solid #f0a340;
+  outline-offset: 2px;
+}
