@@ -59,8 +59,9 @@ npm run dev
 ```
 
 Open `http://localhost:3000`. The app will create a browser-local
-wallet automatically on first load -- fund it from the studionet
-faucet link on the landing screen before registering a claim.
+wallet automatically on first load. Studionet is a free test
+environment -- no funding step is needed before registering a claim
+or triggering a challenge.
 
 ### 4. Push to GitHub
 

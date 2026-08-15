@@ -8,6 +8,8 @@ import Dashboard from "@/components/Dashboard";
 import RegisterClaimForm from "@/components/RegisterClaimForm";
 import ClaimDetail from "@/components/ClaimDetail";
 import Beacon from "@/components/Beacon";
+import Logo from "@/components/Logo";
+import WalletMenu from "@/components/WalletMenu";
 
 type Screen =
   | { name: "landing" }
@@ -55,22 +57,20 @@ export default function App() {
     <div className="min-h-screen">
       <header className="border-b border-line px-6 py-4 flex items-center justify-between">
         <button
-          className="flex items-center gap-2 font-display text-lg tracking-tight"
+          className="flex items-center gap-2.5 font-display text-lg tracking-tight"
           onClick={goDashboard}
         >
-          <Beacon size={12} />
+          <Logo size={26} />
           <span>Watchtower</span>
         </button>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
           <button
             onClick={goRegister}
             className="text-sm px-3 py-1.5 rounded-md border border-line hover:border-beacon transition-colors"
           >
             Register a claim
           </button>
-          <span className="font-mono text-xs text-inkMuted hidden sm:inline">
-            {account.address.slice(0, 6)}...{account.address.slice(-4)}
-          </span>
+          <WalletMenu account={account} />
         </div>
       </header>
 
