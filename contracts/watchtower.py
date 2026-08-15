@@ -262,21 +262,27 @@ class Watchtower(gl.Contract):
 
             if not page_text:
                 # decision made HERE, inside generate()
-                return json.dumps({"passed": False, "reason": "proof_url unreachable"})
+                return {"passed": False, "reason": "proof_url unreachable"}
 
             found = nonce in page_text
-            return json.dumps({
+            return {
                 "passed": bool(found),
                 "reason": "nonce found on page" if found else "nonce not found on page",
-            })
+            }
 
-        result_raw = gl.eq_principle.prompt_non_comparative(
-            generate,
-            task=f"Verify whether the live page at a given URL currently contains the exact code '{nonce}'.",
-            criteria="The page is fetched live at resolution time. passed=true only if the exact nonce string appears in the fetched text.",
-        )
-
-        verdict = self._normalize_verdict(result_raw)
+        # This is a clean, deterministic yes/no string match with no
+        # LLM call in it -- every validator that fetches the same
+        # content should produce the EXACT same output. strict_eq
+        # (the same call GenLayer's own PredictionMarket sample uses
+        # for an equally clean, deterministic dict) checks for that
+        # exact equality directly. prompt_non_comparative was the
+        # wrong tool here: it runs its own separate LLM judgment to
+        # decide whether output is "close enough" to a task
+        # description, which is only meaningful when generate()
+        # itself produces free-form LLM reasoning -- ours never did,
+        # and handing it a clean dict with no prose left that
+        # judgment step with nothing sensible to evaluate.
+        verdict = gl.eq_principle.strict_eq(generate)
         self._apply_verdict(challenge_id, ch, verdict)
 
     # --------------------------------------------------------
