@@ -149,8 +149,15 @@ export default function ClaimDetail({
       await writeContract(client, method, [activeChallenge.challenge_id]);
       setResolveStage("confirming");
 
+      // This specific call runs gl.nondet.web.request + eq_principle
+      // consensus -- the one operation the build guide explicitly
+      // measured at 3-5 minutes on studionet, unlike every other
+      // write in this app which is a plain state change. 90 attempts
+      // at 4s apart covers 6 minutes; the old 8-attempt/20-second
+      // loop was silently giving up long before consensus finished,
+      // which is why this looked like it "did nothing."
       let resolved: Challenge | null = null;
-      for (let i = 0; i < 8; i++) {
+      for (let i = 0; i < 90; i++) {
         const ch: Challenge = await readContract(client, "get_challenge", [
           activeChallenge.challenge_id,
         ]);
@@ -158,13 +165,22 @@ export default function ClaimDetail({
           resolved = ch;
           break;
         }
-        await new Promise((r) => setTimeout(r, 2500));
+        await new Promise((r) => setTimeout(r, 4000));
       }
+
       if (resolved) {
         setActiveChallenge(resolved);
+        setResolveStage("idle");
+        await loadClaim();
+      } else {
+        // Don't pretend this succeeded or silently reset -- say
+        // plainly that consensus is still running so it's clear
+        // nothing was lost.
+        setResolveError(
+          "Still waiting for validator consensus. This can take a few minutes on studionet -- click Resolve challenge now again in a moment to check the latest status."
+        );
+        setResolveStage("error");
       }
-      setResolveStage("idle");
-      await loadClaim();
     } catch (err: any) {
       setResolveError(err?.message || "Could not resolve the challenge");
       setResolveStage("error");
@@ -326,7 +342,9 @@ export default function ClaimDetail({
           {(resolveStage === "submitting" || resolveStage === "confirming") && (
             <div className="flex items-center gap-2 text-sm text-inkMuted mb-3">
               <Beacon size={10} />
-              {resolveStage === "submitting" ? "Submitting" : "Waiting for consensus"}
+              {resolveStage === "submitting"
+                ? "Submitting"
+                : "Waiting for validator consensus \u2014 this genuinely takes a few minutes, it's not frozen"}
             </div>
           )}
 
