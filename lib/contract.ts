@@ -96,7 +96,14 @@ export async function writeContract(
     functionName: method,
     args,
   };
-  if (valueRaw !== undefined) {
+  // Only attach `value` when it's actually nonzero. Sending an
+  // explicit "0" was confirmed to trip GenLayer's RPC parameter
+  // validation ("Invalid parameters were provided to the RPC
+  // method") on a payable call with no real fee configured yet --
+  // omitting it entirely defaults to zero safely on the contract
+  // side, since the contract's own checks treat missing and zero
+  // value the same way.
+  if (valueRaw !== undefined && valueRaw > 0n) {
     params.value = valueRaw.toString();
   }
 
