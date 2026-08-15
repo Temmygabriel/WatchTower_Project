@@ -1,1 +1,1 @@
-idle
+system nominal WT-000001
