@@ -1,38 +1,51 @@
 export default function Beacon({
   size = 10,
-  color = "beacon",
+  color = "signal",
   active = true,
 }: {
   size?: number;
-  color?: "beacon" | "verified" | "violation";
+  color?: "signal" | "verified" | "alarm";
   active?: boolean;
 }) {
   const colorMap: Record<string, string> = {
-    beacon: "#F0A340",
-    verified: "#2FBF9F",
-    violation: "#E5484D",
+    signal: "#F0A340",
+    verified: "#3FD6C0",
+    alarm: "#FF5D5D",
   };
   const hex = colorMap[color];
+  const sweepSize = size * 4.2;
 
   return (
     <span
-      className="beacon-wrap"
-      style={{ width: size + 20, height: size + 20 }}
+      className="relative inline-flex items-center justify-center shrink-0"
+      style={{ width: sweepSize, height: sweepSize }}
       aria-hidden="true"
     >
       {active && (
         <span
-          className="beacon-ring animate-sweep"
-          style={{ borderColor: `${hex}55` }}
+          className="absolute inset-0 rounded-full animate-radarSweep"
+          style={{
+            background: `conic-gradient(from 0deg, ${hex}55, transparent 35%)`,
+            maskImage: "radial-gradient(circle, transparent 35%, black 36%, black 100%)",
+            WebkitMaskImage: "radial-gradient(circle, transparent 35%, black 36%, black 100%)",
+          }}
         />
       )}
       <span
-        className={active ? "beacon-dot animate-beaconPulse" : "beacon-dot"}
+        className="absolute rounded-full"
+        style={{
+          width: size * 2.2,
+          height: size * 2.2,
+          background: `radial-gradient(circle, ${hex}30, transparent 70%)`,
+        }}
+      />
+      <span
+        className={active ? "rounded-full animate-beaconPulse" : "rounded-full"}
         style={{
           width: size,
           height: size,
           background: hex,
-          boxShadow: `0 0 ${size}px 2px ${hex}88`,
+          boxShadow: `0 0 ${size * 1.2}px 1px ${hex}99`,
         }}
       />
     </span>

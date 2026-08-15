@@ -5,10 +5,10 @@ import { readContract, fromRawGen } from "@/lib/contract";
 import { Claim, isNotFound } from "@/lib/types";
 import Beacon from "./Beacon";
 
-function statusColor(status: string): "beacon" | "verified" | "violation" {
-  if (status === "violated") return "violation";
+function statusColor(status: string): "signal" | "verified" | "alarm" {
+  if (status === "violated") return "alarm";
   if (status === "active") return "verified";
-  return "beacon";
+  return "signal";
 }
 
 function claimId(n: number): string {
@@ -68,33 +68,33 @@ export default function Dashboard({
         </div>
         <button
           onClick={onRegister}
-          className="text-sm px-4 py-2 rounded-lg bg-beacon text-base font-medium hover:opacity-90 transition-opacity whitespace-nowrap"
+          className="text-sm px-4 py-2 rounded-lg wt-btn-primary font-medium whitespace-nowrap"
         >
           Register a claim
         </button>
       </div>
 
       {loading && (
-        <div className="flex items-center gap-3 text-inkMuted py-16 justify-center">
+        <div className="flex items-center gap-3 text-mist py-16 justify-center">
           <Beacon size={12} />
           <span className="text-sm">Loading claims</span>
         </div>
       )}
 
       {!loading && error && (
-        <div className="border border-violation/40 bg-violation/5 rounded-xl p-5 text-sm text-violation">
+        <div className="border border-alarm/40 bg-alarm/5 rounded-xl p-5 text-sm text-alarm">
           Couldn&apos;t reach the contract: {error}
         </div>
       )}
 
       {!loading && !error && claims.length === 0 && (
-        <div className="border border-dashed border-line rounded-xl p-10 text-center">
-          <p className="text-inkMuted mb-4">
+        <div className="border border-dashed border-horizon rounded-xl p-10 text-center">
+          <p className="text-mist mb-4">
             No claims yet. Be the first to register one.
           </p>
           <button
             onClick={onRegister}
-            className="text-sm px-4 py-2 rounded-lg border border-line hover:border-beacon transition-colors"
+            className="text-sm px-4 py-2 rounded-lg border border-horizon hover:border-signal transition-colors"
           >
             Register a claim
           </button>
@@ -107,7 +107,7 @@ export default function Dashboard({
             <button
               key={c.claim_id}
               onClick={() => onOpenClaim(c.claim_id)}
-              className="w-full text-left bg-panel border border-line rounded-xl p-5 hover:border-beacon/50 transition-colors flex items-center gap-4"
+              className="w-full text-left wt-card-interactive p-5 flex items-center gap-4"
             >
               <Beacon size={9} color={statusColor(c.status)} active={c.status === "active"} />
               <div className="flex-1 min-w-0">

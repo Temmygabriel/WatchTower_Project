@@ -11,10 +11,10 @@ function challengeIdFromCount(n: number): string {
   return "CHL" + String(n).padStart(6, "0");
 }
 
-function statusColor(status: string): "beacon" | "verified" | "violation" {
-  if (status === "violated") return "violation";
+function statusColor(status: string): "signal" | "verified" | "alarm" {
+  if (status === "violated") return "alarm";
   if (status === "active") return "verified";
-  return "beacon";
+  return "signal";
 }
 
 export default function ClaimDetail({
@@ -222,15 +222,15 @@ export default function ClaimDetail({
       </a>
 
       <div className="grid grid-cols-3 gap-3 mb-8">
-        <div className="bg-panel border border-line rounded-lg p-4">
+        <div className="wt-card p-4">
           <p className="text-xs text-inkMuted mb-1">Total bond</p>
           <p className="font-mono text-sm">{fromRawGen(claim.bond_total)} GEN</p>
         </div>
-        <div className="bg-panel border border-line rounded-lg p-4">
+        <div className="wt-card p-4">
           <p className="text-xs text-inkMuted mb-1">Available</p>
           <p className="font-mono text-sm">{fromRawGen(availableRaw)} GEN</p>
         </div>
-        <div className="bg-panel border border-line rounded-lg p-4">
+        <div className="wt-card p-4">
           <p className="text-xs text-inkMuted mb-1">Slashed</p>
           <p className="font-mono text-sm text-violation">{fromRawGen(claim.bond_slashed)} GEN</p>
         </div>
@@ -242,7 +242,7 @@ export default function ClaimDetail({
       </p>
 
       {claim.status !== "active" && (
-        <div className="border border-line rounded-xl p-5 text-sm text-inkMuted">
+        <div className="wt-card p-5 text-sm text-inkMuted">
           {claim.status === "violated"
             ? "This claim failed a challenge. Its bond has been slashed and it's no longer active."
             : "This claim has been withdrawn by its operator."}
@@ -250,7 +250,7 @@ export default function ClaimDetail({
       )}
 
       {claim.status === "active" && !activeChallenge && (
-        <div className="border border-line rounded-xl p-5">
+        <div className="wt-card p-5">
           <h2 className="font-medium mb-1">Start a challenge</h2>
           <p className="text-sm text-inkMuted mb-4">
             Choose how much of the operator&apos;s bond you&apos;re putting on
@@ -264,7 +264,7 @@ export default function ClaimDetail({
             value={stakeInput}
             onChange={(e) => setStakeInput(e.target.value)}
             disabled={startStage === "submitting" || startStage === "confirming"}
-            className="w-full bg-base border border-line rounded-lg px-3 py-2 text-sm font-mono focus:border-beacon outline-none disabled:opacity-50 mb-3"
+            className="w-full wt-input rounded-lg px-3 py-2 text-sm font-mono outline-none disabled:opacity-50 mb-3"
           />
 
           <p className="text-xs text-inkMuted mb-4">
@@ -284,7 +284,7 @@ export default function ClaimDetail({
           <button
             onClick={handleStartChallenge}
             disabled={startStage === "submitting" || startStage === "confirming"}
-            className="w-full bg-beacon text-base font-medium py-2.5 rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50"
+            className="w-full wt-btn-primary py-2.5 rounded-lg font-medium disabled:opacity-50"
           >
             Trigger surprise check
           </button>
@@ -333,7 +333,7 @@ export default function ClaimDetail({
           <button
             onClick={handleResolve}
             disabled={resolveStage === "submitting" || resolveStage === "confirming"}
-            className="w-full bg-beacon text-base font-medium py-2.5 rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50"
+            className="w-full wt-btn-primary py-2.5 rounded-lg font-medium disabled:opacity-50"
           >
             Resolve challenge now
           </button>
@@ -351,7 +351,7 @@ export default function ClaimDetail({
           <div className="flex items-center gap-2 mb-2">
             <Beacon
               size={10}
-              color={activeChallenge.status === "passed" ? "verified" : "violation"}
+              color={activeChallenge.status === "passed" ? "verified" : "alarm"}
               active={false}
             />
             <h2 className="font-medium capitalize">{activeChallenge.status}</h2>

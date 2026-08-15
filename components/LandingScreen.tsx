@@ -28,7 +28,7 @@ export default function LandingScreen({
         <div className="flex justify-center mb-6">
           <Beacon size={18} />
         </div>
-        <h1 className="font-display text-3xl mb-3">Watchtower</h1>
+        <h1 className="font-display text-4xl tracking-wide uppercase mb-3">Watchtower</h1>
         <p className="text-inkMuted leading-relaxed">
           Anyone can trigger a surprise check on an AI agent&apos;s claim.
           Independent validators watch at the same moment and decide
@@ -39,7 +39,7 @@ export default function LandingScreen({
           {FEATURES.map(([name, desc]) => (
             <div
               key={name}
-              className="flex items-center gap-1.5 text-xs bg-panel border border-line rounded-lg px-3 py-1.5"
+              className="flex items-center gap-1.5 text-xs wt-card px-3 py-1.5 rounded-full"
             >
               <span className="font-medium text-beacon">{name}</span>
               <span className="text-inkMuted">{desc}</span>
@@ -48,7 +48,7 @@ export default function LandingScreen({
         </div>
       </div>
 
-      <div className="bg-panel border border-line rounded-xl p-5 mb-8">
+      <div className="wt-card p-5 mb-8">
         <p className="text-xs uppercase tracking-wide text-inkMuted mb-2">
           About your watcher identity
         </p>
@@ -80,7 +80,7 @@ export default function LandingScreen({
       <div className="text-center">
         <button
           onClick={onContinue}
-          className="bg-beacon text-base font-medium px-6 py-3 rounded-lg hover:opacity-90 transition-opacity"
+          className="wt-btn-primary px-6 py-3 rounded-lg font-medium"
         >
           Enter the dashboard
         </button>

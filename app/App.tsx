@@ -55,9 +55,9 @@ export default function App() {
 
   return (
     <div className="min-h-screen">
-      <header className="border-b border-line px-6 py-4 flex items-center justify-between">
+      <header className="border-b border-horizon px-6 py-4 backdrop-blur-sm bg-abyss/80 sticky top-0 z-10 flex items-center justify-between">
         <button
-          className="flex items-center gap-2.5 font-display text-lg tracking-tight"
+          className="flex items-center gap-2.5 font-display text-xl tracking-wide uppercase"
           onClick={goDashboard}
         >
           <Logo size={26} />

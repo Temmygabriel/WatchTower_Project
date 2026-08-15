@@ -99,7 +99,7 @@ export default function RegisterClaimForm({
             disabled={busy}
             rows={3}
             placeholder="e.g. My trading bot only executes trades on blue-chip tokens"
-            className="w-full bg-panel border border-line rounded-lg px-3 py-2 text-sm focus:border-beacon outline-none disabled:opacity-50"
+            className="w-full wt-input rounded-lg px-3 py-2 text-sm outline-none disabled:opacity-50"
           />
           {fieldErrors.claimText && (
             <p className="text-xs text-violation mt-1">{fieldErrors.claimText}</p>
@@ -114,7 +114,7 @@ export default function RegisterClaimForm({
             onChange={(e) => setProofUrl(e.target.value)}
             disabled={busy}
             placeholder="https://raw.githubusercontent.com/you/repo/main/status.txt"
-            className="w-full bg-panel border border-line rounded-lg px-3 py-2 text-sm font-mono focus:border-beacon outline-none disabled:opacity-50"
+            className="w-full wt-input rounded-lg px-3 py-2 text-sm font-mono outline-none disabled:opacity-50"
           />
           <p className="text-xs text-inkMuted mt-1">
             Plain text or JSON pages work best. JavaScript-rendered pages
@@ -156,7 +156,7 @@ export default function RegisterClaimForm({
             value={bond}
             onChange={(e) => setBond(e.target.value)}
             disabled={busy}
-            className="w-full bg-panel border border-line rounded-lg px-3 py-2 text-sm font-mono focus:border-beacon outline-none disabled:opacity-50"
+            className="w-full wt-input rounded-lg px-3 py-2 text-sm font-mono outline-none disabled:opacity-50"
           />
           <p className="text-xs text-inkMuted mt-1">
             This is what a watcher can win if they catch you failing a
@@ -198,7 +198,7 @@ export default function RegisterClaimForm({
         <button
           type="submit"
           disabled={busy}
-          className="w-full bg-beacon text-base font-medium py-3 rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50"
+          className="w-full wt-btn-primary py-3 rounded-lg font-medium disabled:opacity-50"
         >
           {busy ? "Working..." : "Register claim & lock bond"}
         </button>

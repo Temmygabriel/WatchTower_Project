@@ -4,8 +4,8 @@
 
 html,
 body {
-  background-color: #0b0e11;
-  color: #e6e9ec;
+  background-color: #0a0e14;
+  color: #e8edf2;
 }
 
 * {
@@ -14,39 +14,84 @@ body {
 
 ::selection {
   background: #f0a340;
-  color: #0b0e11;
+  color: #0a0e14;
 }
 
-/* The beacon -- Watchtower's signature element. A pulsing dot
-   with a slow rotating sweep ring around it, meant to read as
-   "actively watching" rather than a generic status indicator.
-   Used on the landing hero and next to any active claim. */
-.beacon-wrap {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+/* The layered background -- this is where "depth" actually comes
+   from. A flat single color reads as generic no matter what hex
+   you pick; a soft light source falling off into darkness, plus a
+   faint schematic grid, is what makes a dark UI feel like an
+   instrument panel instead of a dark-mode toggle. */
+body {
+  background-image:
+    radial-gradient(ellipse 800px 500px at 50% -10%, rgba(240, 163, 64, 0.10), transparent 60%),
+    linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+  background-size: auto, 48px 48px, 48px 48px;
+  background-attachment: fixed;
 }
 
-.beacon-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 9999px;
-  background: #f0a340;
-  box-shadow: 0 0 12px 2px rgba(240, 163, 64, 0.55);
-}
+/* Real elevation for cards -- a whisper of gradient, an inner
+   highlight edge like light catching a physical panel, and a
+   shadow tinted toward the background color rather than pure
+   black, so raised surfaces feel grounded instead of just
+   "lighter gray on darker gray." */
+@layer components {
+  .wt-card {
+    background: linear-gradient(180deg, #161D27 0%, #131920 100%);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-top-color: rgba(255, 255, 255, 0.10);
+    border-radius: 14px;
+    box-shadow:
+      0 1px 0 rgba(255, 255, 255, 0.04) inset,
+      0 12px 24px -12px rgba(0, 0, 0, 0.5);
+  }
 
-.beacon-ring {
-  position: absolute;
-  inset: -10px;
-  border-radius: 9999px;
-  border: 1px solid rgba(240, 163, 64, 0.35);
+  .wt-card-interactive {
+    @apply wt-card transition-all duration-150;
+  }
+  .wt-card-interactive:hover {
+    border-color: rgba(240, 163, 64, 0.35);
+    transform: translateY(-1px);
+    box-shadow:
+      0 1px 0 rgba(255, 255, 255, 0.06) inset,
+      0 16px 28px -12px rgba(0, 0, 0, 0.6);
+  }
+
+  .wt-btn-primary {
+    background: linear-gradient(180deg, #F5B563 0%, #E8922B 100%);
+    box-shadow:
+      0 1px 0 rgba(255, 255, 255, 0.35) inset,
+      0 8px 16px -6px rgba(240, 163, 64, 0.35);
+    color: #1A1206;
+    transition: filter 0.15s, transform 0.1s;
+  }
+  .wt-btn-primary:hover {
+    filter: brightness(1.06);
+  }
+  .wt-btn-primary:active {
+    transform: translateY(1px);
+  }
+  .wt-btn-primary:disabled {
+    opacity: 0.45;
+    filter: none;
+    transform: none;
+  }
+
+  .wt-input {
+    background: #10151C;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+  .wt-input:focus {
+    border-color: #F0A340;
+    box-shadow: 0 0 0 3px rgba(240, 163, 64, 0.15);
+  }
 }
 
 /* Reduced motion: honor system preference, per quality floor */
 @media (prefers-reduced-motion: reduce) {
   .animate-beaconPulse,
-  .animate-sweep {
+  .animate-radarSweep {
     animation: none !important;
   }
 }
