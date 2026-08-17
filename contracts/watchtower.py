@@ -602,10 +602,27 @@ Respond with ONLY a JSON object, no other text:
                 "evidence_digest": evidence_digest,
             })
 
-        result_raw = gl.eq_principle.prompt_non_comparative(
+        # AUDIT FIX #3 (behavior path): use the COMPARATIVE principle, not the
+        # non-comparative one. prompt_non_comparative wraps generate() in a
+        # SECOND LLM pass and returns that text, which discards the structured
+        # evidence_status / evidence_digest generate() computed -- so a slash
+        # could never be bound to authenticated evidence (it silently always
+        # fell through to "inconclusive"). prompt_comparative returns
+        # generate()'s own result verbatim from the leader while validators
+        # independently re-fetch and judge equivalence, so the authenticated
+        # digest survives to _apply_verdict AND consensus is preserved.
+        result_raw = gl.eq_principle.prompt_comparative(
             generate,
-            task="Verify whether an agent's live proof data is consistent with its stated promise.",
-            criteria="Validators independently fetch the live proof URL and judge consistency with the promise text. Ambiguous or low-confidence cases must be treated as a fail.",
+            principle=(
+                "Two verdicts are equivalent if they reach the SAME pass/fail "
+                "decision about whether the agent's live proof data is "
+                "consistent with its stated promise. Validators independently "
+                "fetch the same proof URL; ambiguous or low-confidence cases "
+                "must be treated as a fail. The evidence_digest may legitimately "
+                "differ between nodes if the live page changed between fetches "
+                "and need not match byte-for-byte -- only the pass/fail "
+                "decision must agree."
+            ),
         )
 
         verdict = self._normalize_verdict(result_raw)

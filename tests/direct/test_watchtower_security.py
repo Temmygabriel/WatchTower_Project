@@ -272,10 +272,15 @@ def test_authenticated_behavior_failure_slashes_and_binds_page_digest(
     ch_id = c.start_challenge(claim_id, STAKE, "")
 
     direct_vm.mock_web(PROOF_RE, {"status": 200, "body": page_body})
-    # Leader LLM judges the promise broken, high confidence.
+    # A real LLM returns prose + a fenced ```json block, which the contract
+    # strips before parsing. gltest auto-parses a *bare* JSON string into a
+    # dict (for exec_prompt(response_format="json")), which would break the
+    # contract's .replace() on raw text -- so we fence it to keep it a string.
     direct_vm.mock_llm(
         r"checking whether an AI agent",
-        json.dumps({"passed": False, "confidence": 92, "reason": "feed silent, promise broken"}),
+        "```json\n"
+        + json.dumps({"passed": False, "confidence": 92, "reason": "feed silent, promise broken"})
+        + "\n```",
     )
     direct_vm.warp(T0_PAST_RESPONSE)
     c.resolve_behavior_challenge(ch_id)
