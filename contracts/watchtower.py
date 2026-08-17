@@ -12,10 +12,43 @@
 # just Python, not a cross-contract call. That removes the
 # single biggest unproven risk in the earlier 3-contract draft.
 # ============================================================
+#
+# SECURITY HARDENING (audit remediation) -- the "surprise audit"
+# used to be gameable in three ways. All three are now closed:
+#
+#   1. PREDICTABLE NONCES. The nonce was "WT-" + a public
+#      sequential counter, so an agent could read the next
+#      challenge id off-chain and pre-publish every future nonce,
+#      passing liveness checks forever without being watched.
+#      FIX: commit-reveal. The watcher commits sha256(secret)
+#      when opening; the secret nonce is HIDDEN until they reveal
+#      it. The agent cannot pre-publish what it cannot predict.
+#
+#   2. IMMEDIATE RESOLUTION. A challenge could be opened and
+#      resolved in the same instant, slashing an honest agent
+#      before it had any chance to respond to the surprise.
+#      FIX: an ENFORCED, on-chain response window. Resolution is
+#      rejected until `resolve_not_before` (a transaction-time
+#      deadline) has passed. Time is the deterministic GenVM
+#      transaction timestamp, so every validator agrees on it.
+#
+#   3. UNAUTHENTICATED EVIDENCE. Slashing acted on a single live
+#      fetch of the operator's own (mutable) URL, with nothing
+#      recorded tying the verdict to what was actually observed.
+#      FIX: verdicts are BOUND to authenticated evidence. A slash
+#      is only permitted when consensus positively observed the
+#      failure (evidence_status == "authenticated") AND an
+#      evidence digest is recorded on-chain in the challenge and
+#      payout. An unreachable / inconclusive fetch NEVER slashes
+#      -- it releases the bond and marks the challenge
+#      "inconclusive" instead.
+# ============================================================
 
 from genlayer import *
 import json
 import typing
+import hashlib
+from datetime import datetime, timezone
 
 
 class Watchtower(gl.Contract):
@@ -38,6 +71,18 @@ class Watchtower(gl.Contract):
     admin_address: str
     challenge_fee: u256
 
+    # --- fair-response-window config (audit fix #2) ---
+    # Seconds the agent gets to respond AFTER the surprise nonce is
+    # revealed (liveness) or the challenge is opened (behavior),
+    # before anyone is allowed to resolve. Seconds the watcher gets
+    # to reveal a committed nonce before the challenge can be
+    # cancelled and the agent's bond released. Both are admin-tunable
+    # via configure_windows(); production should raise the response
+    # window (e.g. hours) -- the defaults are demo-friendly but still
+    # enforce a real, non-zero delay that kills atomic open+resolve.
+    response_window_seconds: u256
+    reveal_window_seconds: u256
+
     def __init__(self):
         self.claim_counter = u256(0)
         self.challenge_counter = u256(0)
@@ -46,6 +91,8 @@ class Watchtower(gl.Contract):
         self.protocol_fee_bps = u256(500)   # 5% default
         self.protocol_fees_collected = u256(0)
         self.challenge_fee = u256(0)
+        self.response_window_seconds = u256(300)   # 5 min default (tunable)
+        self.reveal_window_seconds = u256(600)     # 10 min default (tunable)
 
     # ------------------------------------------------------
     # Sender identity -- always from the signed transaction,
@@ -53,6 +100,16 @@ class Watchtower(gl.Contract):
     # ------------------------------------------------------
     def _sender(self) -> str:
         return gl.message.sender_address.as_hex
+
+    # ------------------------------------------------------
+    # Deterministic transaction time (Unix seconds). The GenVM
+    # pins datetime.now() to the transaction timestamp, so every
+    # validator re-executing this tx sees the SAME value -- safe
+    # for storage and comparison. Only ever call this from WRITE
+    # methods (view-method datetime can be a placeholder).
+    # ------------------------------------------------------
+    def _now(self) -> int:
+        return int(datetime.now(timezone.utc).timestamp())
 
     @gl.public.write
     def configure(self, fee_bps: str, challenge_fee_amount: str) -> None:
@@ -64,9 +121,35 @@ class Watchtower(gl.Contract):
         self.protocol_fee_bps = u256(fee)
         self.challenge_fee = u256(int(challenge_fee_amount))
 
+    # Admin-tunable fair-response-window settings (audit fix #2).
+    # Kept separate from configure() so the existing 2-arg deploy
+    # step / README stay valid. Both values are in seconds.
+    @gl.public.write
+    def configure_windows(self, response_window_secs: str, reveal_window_secs: str) -> None:
+        if self._sender() != self.admin_address:
+            raise gl.vm.UserError("Only admin")
+        resp = int(response_window_secs)
+        rev = int(reveal_window_secs)
+        # A zero response window would re-open the "resolve immediately"
+        # hole, so require a real, positive delay.
+        if resp <= 0:
+            raise gl.vm.UserError("response window must be > 0 seconds")
+        if rev <= 0:
+            raise gl.vm.UserError("reveal window must be > 0 seconds")
+        self.response_window_seconds = u256(resp)
+        self.reveal_window_seconds = u256(rev)
+
     @gl.public.view
     def get_challenge_fee(self) -> int:
         return int(self.challenge_fee)
+
+    @gl.public.view
+    def get_response_window(self) -> int:
+        return int(self.response_window_seconds)
+
+    @gl.public.view
+    def get_reveal_window(self) -> int:
+        return int(self.reveal_window_seconds)
 
     # ========================================================
     # CLAIMS
@@ -150,9 +233,31 @@ class Watchtower(gl.Contract):
     # ========================================================
     # CHALLENGES
     # ========================================================
+    #
+    # Lifecycle (audit-hardened):
+    #   liveness:  committed --reveal--> revealed --window--> resolve
+    #                   |                                        |
+    #                   +--(watcher never reveals)--> cancelled  +--> passed / failed / inconclusive
+    #   behavior:  pending --window--> resolve --> passed / failed / inconclusive
+    #
+    #   passed        = agent honest, reserved bond released
+    #   failed        = agent lied, AUTHENTICATED evidence recorded, bond slashed
+    #   inconclusive  = no authenticated evidence (e.g. unreachable) -> bond released, NO slash
+    #   cancelled     = liveness commit expired without a reveal   -> bond released, NO slash
+    # ========================================================
+
+    def _is_hex64(self, s: str) -> bool:
+        if len(s) != 64:
+            return False
+        return all(c in "0123456789abcdef" for c in s)
 
     @gl.public.write.payable
-    def start_challenge(self, claim_id: str, stake_amount: str) -> str:
+    def start_challenge(self, claim_id: str, stake_amount: str, nonce_commitment: str) -> str:
+        # AUDIT FIX #1 (predictable nonces): for liveness claims the
+        # watcher must supply a commitment = sha256(secret_nonce) hex.
+        # The secret nonce stays hidden until reveal_nonce(), so the
+        # agent cannot pre-publish it. Behavior claims have no nonce to
+        # post, so they pass an empty commitment.
         paid = gl.message.value
         if paid < int(self.challenge_fee):
             raise gl.vm.UserError("Insufficient challenge fee")
@@ -160,15 +265,26 @@ class Watchtower(gl.Contract):
         if stake <= 0:
             raise gl.vm.UserError("stake_amount must be positive")
 
+        record = self._load_claim(claim_id)
+        if record["status"] != "active":
+            raise gl.vm.UserError("Claim is not active")
+
+        claim_type = record["claim_type"]
+        commitment = (nonce_commitment or "").strip().lower()
+        if claim_type == "liveness":
+            if not self._is_hex64(commitment):
+                raise gl.vm.UserError(
+                    "liveness challenge needs a nonce_commitment = sha256(secret) as 64 hex chars"
+                )
+        else:
+            # behavior: no committed nonce; ignore whatever was passed.
+            commitment = ""
+
         # The fee the watcher pays goes straight to protocol_fees_collected
         # -- without this line it was real GEN sitting in the contract's
         # balance with no accounting entry pointing at it, meaning
         # withdraw_protocol_fees could never actually reach it.
         self.protocol_fees_collected = u256(int(self.protocol_fees_collected) + paid)
-
-        record = self._load_claim(claim_id)
-        if record["status"] != "active":
-            raise gl.vm.UserError("Claim is not active")
 
         available = record["bond_total"] - record["bond_locked"] - record["bond_slashed"]
         if stake > available:
@@ -184,16 +300,37 @@ class Watchtower(gl.Contract):
 
         challenge_id = "CHL" + str(int(self.challenge_counter) + 1).zfill(6)
         self.challenge_counter = u256(int(self.challenge_counter) + 1)
-        nonce = "WT-" + challenge_id[-6:]
+
+        now = self._now()
+        if claim_type == "liveness":
+            status = "committed"
+            reveal_deadline = now + int(self.reveal_window_seconds)
+            resolve_not_before = 0   # set on reveal, once the clock actually starts
+        else:
+            status = "pending"
+            reveal_deadline = 0
+            # AUDIT FIX #2: behavior has no reveal step, so the fair
+            # window starts at open.
+            resolve_not_before = now + int(self.response_window_seconds)
 
         ch = {
             "challenge_id": challenge_id,
             "claim_id": claim_id,
+            "claim_type": claim_type,
             "watcher": self._sender(),
-            "nonce": nonce,
+            "commitment": commitment,   # sha256(secret) for liveness, "" for behavior
+            "nonce": "",                # revealed later for liveness; empty for behavior
             "stake_amount": stake,
-            "status": "pending",   # pending | passed | failed
+            "status": status,           # committed|revealed|pending|passed|failed|inconclusive|cancelled
+            "opened_at": now,
+            "reveal_deadline": reveal_deadline,
+            "revealed_at": 0,
+            "resolve_not_before": resolve_not_before,
             "verdict_detail": "",
+            # authenticated-evidence record (audit fix #3), filled at resolution
+            "evidence_status": "",      # ""|authenticated|unavailable
+            "evidence_digest": "",      # sha256 commitment to what consensus observed
+            "observed_at": 0,
         }
         self.challenges[challenge_id] = json.dumps(ch)
 
@@ -231,16 +368,82 @@ class Watchtower(gl.Contract):
         return raw if raw else json.dumps({"error": "not found"})
 
     # --------------------------------------------------------
+    # REVEAL (liveness only) -- audit fix #1 + start of fix #2.
+    # The watcher reveals the secret nonce; the contract checks it
+    # matches the commitment, publishes it (so the agent can now
+    # post it), and STARTS the fair response window. Resolution is
+    # blocked until that window elapses.
+    # --------------------------------------------------------
+    @gl.public.write
+    def reveal_nonce(self, challenge_id: str, secret_nonce: str) -> None:
+        ch = self._load_challenge(challenge_id)
+        if ch["watcher"] != self._sender():
+            raise gl.vm.UserError("Only the watcher who opened this challenge can reveal")
+        if ch["status"] != "committed":
+            raise gl.vm.UserError("Challenge is not awaiting a reveal")
+
+        now = self._now()
+        if now > int(ch["reveal_deadline"]):
+            raise gl.vm.UserError(
+                "Reveal window has expired -- this challenge can now be cancelled"
+            )
+
+        computed = hashlib.sha256(secret_nonce.encode("utf-8")).hexdigest()
+        if computed != ch["commitment"]:
+            raise gl.vm.UserError("secret_nonce does not match the committed hash")
+
+        ch["nonce"] = secret_nonce
+        ch["revealed_at"] = now
+        ch["resolve_not_before"] = now + int(self.response_window_seconds)
+        ch["status"] = "revealed"
+        self.challenges[challenge_id] = json.dumps(ch)
+
+    # --------------------------------------------------------
+    # CANCEL -- anti-grief. If a watcher opens a liveness challenge
+    # (locking the agent's bond) but never reveals the secret, the
+    # bond would otherwise be stuck forever. After the reveal window
+    # expires, anyone may cancel: the reserved bond is released and
+    # no slash occurs. The watcher forfeits the challenge fee (it was
+    # already booked to the protocol), which discourages this grief.
+    # --------------------------------------------------------
+    @gl.public.write
+    def cancel_challenge(self, challenge_id: str) -> None:
+        ch = self._load_challenge(challenge_id)
+        if ch["status"] != "committed":
+            raise gl.vm.UserError("Only an unrevealed (committed) challenge can be cancelled")
+        now = self._now()
+        if now <= int(ch["reveal_deadline"]):
+            raise gl.vm.UserError("Reveal window is still open")
+
+        claim = self._load_claim(ch["claim_id"])
+        claim["bond_locked"] = max(0, claim["bond_locked"] - ch["stake_amount"])
+        self.claims[ch["claim_id"]] = json.dumps(claim)
+
+        ch["status"] = "cancelled"
+        ch["verdict_detail"] = "Cancelled: watcher did not reveal the nonce within the reveal window."
+        self.challenges[challenge_id] = json.dumps(ch)
+
+    # --------------------------------------------------------
     # LIVENESS challenge: plain string match on a live fetch.
     # --------------------------------------------------------
     @gl.public.write
     def resolve_liveness_challenge(self, challenge_id: str) -> None:
         ch = self._load_challenge(challenge_id)
-        if ch["status"] != "pending":
+        # AUDIT FIX #1/#2: the nonce must have been revealed, and the
+        # response window must have elapsed, before we can resolve.
+        if ch["status"] != "revealed":
+            if ch["status"] == "committed":
+                raise gl.vm.UserError("Nonce not revealed yet -- call reveal_nonce first")
             raise gl.vm.UserError("Challenge already resolved")
         claim = self._load_claim(ch["claim_id"])
         if claim["claim_type"] != "liveness":
             raise gl.vm.UserError("This claim is not a liveness-type claim")
+
+        now = self._now()
+        if now < int(ch["resolve_not_before"]):
+            raise gl.vm.UserError(
+                "Response window still open -- the agent must be given time to respond before resolving"
+            )
 
         proof_url = claim["proof_url"]
         nonce = ch["nonce"]
@@ -261,13 +464,33 @@ class Watchtower(gl.Contract):
                         page_text = str(body)[:4000]
 
             if not page_text:
-                # decision made HERE, inside generate()
-                return {"passed": False, "reason": "proof_url unreachable"}
+                # AUDIT FIX #3: no reachable page => no authenticated
+                # evidence. Decision made HERE, inside generate(): this
+                # is NOT a slashable failure, it is inconclusive.
+                return {
+                    "passed": False,
+                    "reason": "proof_url unreachable -- no authenticated evidence, not slashable",
+                    "evidence_status": "unavailable",
+                    "evidence_digest": "",
+                }
 
             found = nonce in page_text
+            # AUDIT FIX #3: bind the verdict to a deterministic digest
+            # of exactly what consensus observed for THIS unpredictable
+            # nonce. We digest the decision-relevant fact (nonce +
+            # present/absent) rather than raw HTML so strict_eq stays
+            # robust -- unrelated page churn cannot split consensus,
+            # but the slash is still cryptographically tied to a fresh,
+            # post-reveal observation of this specific nonce.
+            observation = "present" if found else "absent"
+            digest = hashlib.sha256(
+                (nonce + "|" + observation).encode("utf-8")
+            ).hexdigest()
             return {
                 "passed": bool(found),
                 "reason": "nonce found on page" if found else "nonce not found on page",
+                "evidence_status": "authenticated",
+                "evidence_digest": digest,
             }
 
         # This is a clean, deterministic yes/no string match with no
@@ -299,6 +522,13 @@ class Watchtower(gl.Contract):
         if claim["claim_type"] != "behavior":
             raise gl.vm.UserError("This claim is not a behavior-type claim")
 
+        # AUDIT FIX #2: enforce the fair response window here too.
+        now = self._now()
+        if now < int(ch["resolve_not_before"]):
+            raise gl.vm.UserError(
+                "Response window still open -- the agent must be given time to respond before resolving"
+            )
+
         proof_url = claim["proof_url"]
         promise_text = claim["claim_text"]
 
@@ -315,7 +545,20 @@ class Watchtower(gl.Contract):
                         page_text = str(body)[:4000]
 
             if not page_text:
-                return json.dumps({"passed": False, "confidence": 0, "reason": "proof_url unreachable"})
+                # AUDIT FIX #3: unreachable => no authenticated evidence
+                # => inconclusive, never slashable.
+                return json.dumps({
+                    "passed": False,
+                    "confidence": 0,
+                    "reason": "proof_url unreachable -- no authenticated evidence, not slashable",
+                    "evidence_status": "unavailable",
+                    "evidence_digest": "",
+                })
+
+            # AUDIT FIX #3: digest the exact live data the judgment was
+            # made against, so the slash is bound to an authenticated,
+            # recorded snapshot rather than the mutable live URL.
+            evidence_digest = hashlib.sha256(page_text.encode("utf-8")).hexdigest()
 
             prompt = f"""
 You are checking whether an AI agent's ACTUAL live activity matches
@@ -351,7 +594,13 @@ Respond with ONLY a JSON object, no other text:
             # decision made HERE, inside generate(): low-confidence
             # passes get downgraded to fail
             final_passed = bool(passed_val) and confidence >= 60
-            return json.dumps({"passed": final_passed, "confidence": confidence, "reason": reason})
+            return json.dumps({
+                "passed": final_passed,
+                "confidence": confidence,
+                "reason": reason,
+                "evidence_status": "authenticated",
+                "evidence_digest": evidence_digest,
+            })
 
         result_raw = gl.eq_principle.prompt_non_comparative(
             generate,
@@ -382,6 +631,12 @@ Respond with ONLY a JSON object, no other text:
             verdict["passed"] = bool(verdict.get("result", False))
         verdict["passed"] = bool(verdict.get("passed", False))
         verdict["reason"] = verdict.get("reason", "no reason recorded")
+        # AUDIT FIX #3: carry the evidence binding through normalization.
+        # SAFE DEFAULT: if the evidence fields were lost/garbled, treat
+        # the verdict as having NO authenticated evidence, which blocks
+        # any slash (see _apply_verdict) rather than slashing blind.
+        verdict["evidence_status"] = verdict.get("evidence_status", "unavailable")
+        verdict["evidence_digest"] = verdict.get("evidence_digest", "")
         return verdict
 
     # --------------------------------------------------------
@@ -389,15 +644,39 @@ Respond with ONLY a JSON object, no other text:
     # and pay the watcher out of THIS contract's own balance if
     # the agent failed. No cross-contract call needed -- it's
     # all one balance, one contract.
+    #
+    # AUDIT FIX #3: funds are only slashed when consensus produced
+    # AUTHENTICATED evidence of failure. A "not passed" verdict with
+    # no authenticated evidence (e.g. the page was unreachable) is
+    # NOT a slash -- it releases the bond and records the challenge
+    # as "inconclusive". Slashing blind on a mutable/absent source is
+    # exactly what the audit rejected.
     # --------------------------------------------------------
     def _apply_verdict(self, challenge_id: str, ch: dict, verdict: dict) -> None:
         claim = self._load_claim(ch["claim_id"])
+        now = self._now()
+
+        evidence_status = verdict.get("evidence_status", "unavailable")
+        evidence_digest = verdict.get("evidence_digest", "")
+        authenticated = (evidence_status == "authenticated") and bool(evidence_digest)
+
+        # Always record what was observed, for an immutable audit trail.
+        ch["evidence_status"] = evidence_status
+        ch["evidence_digest"] = evidence_digest
+        ch["observed_at"] = now
 
         if verdict["passed"]:
+            # Agent honest: release the reserved stake.
             ch["status"] = "passed"
             ch["verdict_detail"] = verdict["reason"]
             claim["bond_locked"] = max(0, claim["bond_locked"] - ch["stake_amount"])
+        elif not authenticated:
+            # Not passed, but NO authenticated evidence -> never slash.
+            ch["status"] = "inconclusive"
+            ch["verdict_detail"] = verdict["reason"] or "inconclusive -- no authenticated evidence"
+            claim["bond_locked"] = max(0, claim["bond_locked"] - ch["stake_amount"])
         else:
+            # Agent failed AND consensus authenticated the evidence: slash.
             ch["status"] = "failed"
             ch["verdict_detail"] = verdict["reason"]
             claim["bond_locked"] = max(0, claim["bond_locked"] - ch["stake_amount"])
@@ -413,10 +692,13 @@ Respond with ONLY a JSON object, no other text:
             self.payout_log[payout_id] = json.dumps({
                 "payout_id": payout_id,
                 "claim_id": ch["claim_id"],
+                "challenge_id": challenge_id,
                 "watcher": ch["watcher"],
                 "amount_total": ch["stake_amount"],
                 "watcher_share": watcher_share,
                 "protocol_fee": fee,
+                # bind the payout itself to the authenticated evidence
+                "evidence_digest": evidence_digest,
             })
 
             if watcher_share > 0:

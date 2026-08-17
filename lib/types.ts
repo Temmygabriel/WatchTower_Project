@@ -5,7 +5,31 @@
 
 export type ClaimType = "liveness" | "behavior";
 export type ClaimStatus = "active" | "violated" | "withdrawn";
-export type ChallengeStatus = "pending" | "passed" | "failed";
+// Audit-hardened challenge lifecycle:
+//   liveness: committed -> revealed -> (passed|failed|inconclusive) | cancelled
+//   behavior: pending   ------------> (passed|failed|inconclusive)
+// "inconclusive" = resolved with NO authenticated evidence (e.g. unreachable
+// proof URL) -> bond released, nothing slashed. "cancelled" = a liveness
+// commit whose reveal window lapsed -> bond released.
+export type ChallengeStatus =
+  | "committed"
+  | "revealed"
+  | "pending"
+  | "passed"
+  | "failed"
+  | "inconclusive"
+  | "cancelled";
+
+export const TERMINAL_CHALLENGE_STATUSES: ChallengeStatus[] = [
+  "passed",
+  "failed",
+  "inconclusive",
+  "cancelled",
+];
+
+export function isTerminalChallenge(status: string): boolean {
+  return (TERMINAL_CHALLENGE_STATUSES as string[]).includes(status);
+}
 
 export interface Claim {
   claim_id: string;
@@ -23,11 +47,20 @@ export interface Claim {
 export interface Challenge {
   challenge_id: string;
   claim_id: string;
+  claim_type: ClaimType;
   watcher: string;        // hex address of whoever triggered the challenge
-  nonce: string;           // the surprise code, relevant for liveness claims
+  commitment: string;      // sha256(secret nonce) for liveness; "" for behavior
+  nonce: string;           // the surprise code, revealed only after reveal_nonce
   stake_amount: number;    // raw 18-decimal integer
   status: ChallengeStatus;
+  opened_at: number;       // unix seconds (tx time) the challenge was opened
+  reveal_deadline: number; // unix seconds; watcher must reveal before this (liveness)
+  revealed_at: number;     // unix seconds the nonce was revealed (0 until then)
+  resolve_not_before: number; // unix seconds; resolution blocked until this passes
   verdict_detail: string;
+  evidence_status: string; // "" | "authenticated" | "unavailable"
+  evidence_digest: string; // sha256 of the observation the verdict was bound to
+  observed_at: number;     // unix seconds the evidence was recorded
 }
 
 export interface Payout {
