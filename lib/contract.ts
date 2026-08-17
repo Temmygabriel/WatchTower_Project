@@ -1,7 +1,14 @@
 import { createClient } from "genlayer-js";
 import { studionet } from "genlayer-js/chains";
 
-const CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS || "";
+// The audit-remediated contract on studionet (deployed 2026-08-17,
+// tx 0x282d4af2310a682dee282fe80e5b8d5a1ba0a73679a31fa76bc9e2f66925b1fe).
+// Baked in as the default so the live site points at the FIXED contract
+// even before the Vercel env var is set. Setting NEXT_PUBLIC_CONTRACT_ADDRESS
+// in Vercel still overrides this if you ever redeploy to a new address.
+const CONTRACT_ADDRESS =
+  process.env.NEXT_PUBLIC_CONTRACT_ADDRESS ||
+  "0x3C318Cb7cC02E3d5D5abB08CeDA8b58Ba3f05b4b";
 
 // Plain client pattern, confirmed by the build guide -- no RPC
 // endpoint override. A previous project burned a full debugging
